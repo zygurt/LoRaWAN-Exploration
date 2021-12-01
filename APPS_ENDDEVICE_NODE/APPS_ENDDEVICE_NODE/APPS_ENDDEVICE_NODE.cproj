@@ -345,14 +345,14 @@
         <board id="board.wlr089_xplained_pro" value="Add" config="" content-id="Atmel.ASF" />
       </framework-data>
     </AsfFrameworkConfig>
-    <avrtool>com.atmel.avrdbg.tool.atmelice</avrtool>
-    <avrtoolserialnumber>J42700003393</avrtoolserialnumber>
+    <avrtool>com.atmel.avrdbg.tool.edbg</avrtool>
+    <avrtoolserialnumber>ATML3355011800000346</avrtoolserialnumber>
     <avrdeviceexpectedsignature>0x10810228</avrdeviceexpectedsignature>
     <avrtoolinterface>SWD</avrtoolinterface>
     <com_atmel_avrdbg_tool_atmelice>
       <ToolOptions>
         <InterfaceProperties>
-          <SwdClock>2000000</SwdClock>
+          <SwdClock>0</SwdClock>
         </InterfaceProperties>
         <InterfaceName>SWD</InterfaceName>
       </ToolOptions>

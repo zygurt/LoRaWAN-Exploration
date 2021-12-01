@@ -77,9 +77,12 @@
 /******************************** MACROS ***************************************/
 #define MESSAGE_DELAY 10000
 #define ADC_SAMPLES 3
+#define SHTC_DATA_LENGTH 10
+#define SHTC_SLAVE_ADDRESS 0x70
+#define SHTC_TIMEOUT 10000
 /************************** GLOBAL VARIABLES ***********************************/
 static bool joined = false;
-static float cel_val;
+//static float cel_val;
 //static float fahren_val;
 static char temp_sen_str[25];
 static uint8_t data_len = 0;
@@ -103,6 +106,11 @@ static int last_choice = 1;
 extern struct adc_module adc_instance_temperature;
 extern struct adc_module adc_instance_battery;
 extern struct adc_module adc_instance;
+
+
+
+//extern uint8_t SHTC_write_buffer;
+//extern uint8_t SHTC_read_buffer;
 
 static const char* bandStrings[] =
 {
@@ -210,9 +218,13 @@ static void runCertApp(void);
 static void appWakeup(uint32_t sleptDuration);
 static void app_resources_uninit(void);
 #endif
+
+
 /************************** FUNCTION PROTOTYPES ********************************/
 SYSTEM_TaskStatus_t APP_TaskHandler(void);
 static float convert_celsius_to_fahrenheit(float cel_val);
+//static void	read_SHTC3(void);
+
 /*********************************************************************//*
  \brief      Function that processes the Rx data
  \param[in]  data - Rx data payload
@@ -1035,7 +1047,7 @@ void sendData(void)
 	//Current TTN decoder
 	//snprintf(temp_sen_str,sizeof(temp_sen_str),"\rn%c%c,%c%c,%c%c\rn", temp_lower_byte, temp_upper_byte, vBatt_lower_byte, vBatt_upper_byte, PA08_lower_byte, PA08_upper_byte);
 	
-	
+	//read_SHTC3();
 	
 	////Unused
 	////unsigned char PA08_upper_byte = 0;
@@ -1661,6 +1673,146 @@ void dev_eui_read(void)
 		#endif
 	#endif
 }
+
+
+//static void	read_SHTC3(void){
+	////STHC3 address: 0x70
+	////Sleep: 0xB098
+	////Wakeup: 0x3517
+//
+	////Dev Board Colours
+	////Yellow - SDA PA16
+	////Green - SCL PA17
+//
+	////Timeout counter.
+	//uint16_t timeout = 0;
+//
+	//port_pin_set_output_level(PIN_PA18, true); //yellow LED on
+	////Set device into sleep mode
+	//SHTC_write_buffer[0] = 0xB0;
+	//SHTC_write_buffer[1] = 0x98;
+	//SHTC_write_packet.data_length = 2;
+	////send
+	//while (i2c_master_write_packet_wait(&SHTC_master_instance, &SHTC_write_packet) != STATUS_OK) {
+		///* Increment timeout counter and check if timed out. */
+		//if (timeout++ == SHTC_TIMEOUT) {
+			//printf("\r\nWrite Sleep Timeout\r\n");
+			//break;
+		//}
+	//}
+//
+	////Wakeup device
+		////0
+		////S
+		////1 ACK
+		////0x70 for I2C address
+		////2 ACK
+		////0x35 for Wakeup MSB
+		////3 ACK
+		////0x17 for Wakeup LSB
+		////4 ACK
+		////P
+	//timeout = 0;
+	//SHTC_write_buffer[0] = 0x35;
+	//SHTC_write_buffer[1] = 0x17;
+//
+	////send
+	//while (i2c_master_write_packet_wait(&SHTC_master_instance, &SHTC_write_packet) != STATUS_OK) {
+		///* Increment timeout counter and check if timed out. */
+		//if (timeout++ == SHTC_TIMEOUT) {
+			//printf("\r\nWrite Wakeup Timeout\r\n");
+			//break;
+		//}
+	//}
+//
+//
+	////Measurement command
+	////0
+	////S
+	////1 ACK
+	////0x70 for I2C address
+	////2 ACK
+	////0x5C for Measurement Command MSB
+	////3 ACK
+	////0x24 for Measurement Command LSB
+	////4 ACK
+	////P
+	//timeout = 0;
+//
+	////temperature first, clock stretching disabled, Normal mode
+	//SHTC_write_buffer[0] = 0x78;
+	//SHTC_write_buffer[1] = 0x66;
+	////relative humidity first, clock stretching disabled, Normal mode
+	////SHTC_write_buffer[0] = 0x58;
+	////SHTC_write_buffer[1] = 0xE0;
+	////send
+	//while (i2c_master_write_packet_wait(&SHTC_master_instance, &SHTC_write_packet) != STATUS_OK) {
+		///* Increment timeout counter and check if timed out. */
+		//if (timeout++ == SHTC_TIMEOUT) {
+			//printf("\r\nWrite Measurement Timeout\r\n");
+			//break;
+		//}
+	//}
+//
+	//port_pin_set_output_level(PIN_PA18, false);  //Yellow LED off
+	//port_pin_set_output_level(PIN_PA19, true);	//Green LED on
+//
+//
+//
+	////Read data command
+	//timeout = 0;
+	//SHTC_read_packet.data = SHTC_read_buffer;
+	//SHTC_read_packet.data_length = SHTC_DATA_LENGTH;
+	////read
+	//while (i2c_master_read_packet_wait(&SHTC_master_instance, &SHTC_read_packet) != STATUS_OK) {
+		///* Increment timeout counter and check if timed out. */
+		//if (timeout++ == SHTC_TIMEOUT) {
+			//printf("\r\nRead Timeout\r\n");
+			//break;
+		//}
+	//}
+	////temp first
+	//uint16_t temperature_reading, humidity_reading;
+	////printf("%d\rn",(uint16_t)SHTC_read_buffer[0]<<(1*8));
+	//uint16_t temp_msb, temp_lsb, humid_msb, humid_lsb;
+	//temp_msb = SHTC_read_buffer[0];
+	//temp_lsb = SHTC_read_buffer[1];
+	//humid_msb = SHTC_read_buffer[3];
+	//humid_lsb = SHTC_read_buffer[4];
+	//
+	//temp_msb = temp_msb<<8;
+	//humid_msb = humid_msb<<8;
+	//temperature_reading = temp_lsb + temp_msb;
+	//humidity_reading = humid_lsb + humid_msb;
+	//
+	////temperature_reading = (uint16_t)SHTC_read_buffer[0]<<8 + (uint16_t)SHTC_read_buffer[1];
+	////humidity_reading = (uint16_t)SHTC_read_buffer[3]<<(1*8) + (uint16_t)SHTC_read_buffer[4];
+//
+	//double temperature, relative_humidity;
+	//
+	//temperature = -45+175*((double)temperature_reading/65536);
+	//relative_humidity = 100*((double)humidity_reading/65536);
+	//
+	//printf("The temperature is %g degrees Celsius.\r\n", temperature);
+	//printf("The relative humidity is %g Percent.\r\n", relative_humidity);
+	////Set device into sleep mode
+	//timeout = 0;
+	////Set device into sleep mode
+	//SHTC_write_buffer[0] = 0xB0;
+	//SHTC_write_buffer[1] = 0x98;
+	//SHTC_write_packet.data_length = 2;
+	////send
+	//while (i2c_master_write_packet_wait(&SHTC_master_instance, &SHTC_write_packet) != STATUS_OK) {
+		///* Increment timeout counter and check if timed out. */
+		//if (timeout++ == SHTC_TIMEOUT) {
+			//printf("\r\nWrite Sleep Timeout\r\n");
+			//break;
+		//}
+	//}
+//
+	//port_pin_set_output_level(PIN_PA18, false); //Green LED off
+//}
+
 
 
 /* eof demo_app.c */

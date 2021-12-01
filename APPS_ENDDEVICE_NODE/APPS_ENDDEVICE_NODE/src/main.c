@@ -67,6 +67,11 @@
 /* Button debounce time in ms */
 #define APP_DEBOUNCE_TIME       50
 #define ADC_SAMPLES 3
+
+#define SHTC_DATA_LENGTH 10
+#define SHTC_SLAVE_ADDRESS 0x70
+#define SHTC_TIMEOUT 10000
+
 /************************** Global variables ***********************************/
 bool button_pressed = false;
 bool factory_reset = false;
@@ -80,6 +85,36 @@ bool deviceResetsForWakeup = false;
 #endif
 
 struct adc_module adc_instance;
+struct i2c_master_module SHTC_master_instance;
+static uint8_t SHTC_read_buffer[SHTC_DATA_LENGTH] = {
+	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+};
+struct i2c_master_packet SHTC_read_packet = {
+	.address     = SHTC_SLAVE_ADDRESS,
+	.data_length = SHTC_DATA_LENGTH,
+	.data        = SHTC_read_buffer,
+	.ten_bit_address = false,
+	.high_speed      = false,
+	.hs_master_code  = 0x0,
+};
+
+
+//extern struct i2c_master_module SHTC_master_instance;
+static uint8_t SHTC_write_buffer[SHTC_DATA_LENGTH] = {
+	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+};
+//extern static uint8_t SHTC_read_buffer;
+struct i2c_master_packet SHTC_write_packet = {
+	.address     = SHTC_SLAVE_ADDRESS,
+	.data_length = SHTC_DATA_LENGTH,
+	.data        = SHTC_write_buffer,
+	.ten_bit_address = false,
+	.high_speed      = false,
+	.hs_master_code  = 0x0,
+};
+
+//extern struct i2c_master_packet SHTC_read_packet;
+
 
 
 /************************** Extern variables ***********************************/
@@ -88,6 +123,10 @@ struct adc_module adc_instance;
 static void driver_init(void);
 static void	setup_ADC(void);
 static void config_board(void);
+static void setup_I2C(void);
+static void	read_SHTC3(void);
+void configure_i2c_callbacks(void);
+void i2c_write_complete_callback(struct i2c_master_module *const);
 
 #if (_DEBUG_ == 1)
 static void assertHandler(SystemAssertLevel_t level, uint16_t code);
@@ -183,62 +222,13 @@ int main(void)
     mote_demo_init();
 	setup_ADC();   //Temperature
 	config_board();
+	setup_I2C();
+	configure_i2c_callbacks();
+	while(1){
+		read_SHTC3();
+	}
 	
-	//Test code to avoid Lorawan pairing
-	//while(1){
-//
-		//uint16_t adc_buffer[ADC_SAMPLES];
-		//
-		//unsigned char temp_upper_byte = 0;  //PA06
-		//unsigned char temp_lower_byte = 0;  //PA06
-		//unsigned char vBatt_upper_byte = 0;  //PA07
-		//unsigned char vBatt_lower_byte = 0;  //PA07
-		//unsigned char PA08_upper_byte = 0;  //PA08
-		//unsigned char PA08_lower_byte = 0;  //PA08
-					//
-		////Prepare the buffer arrays
-		//for (int n=0;n<ADC_SAMPLES;n++){
-			//adc_buffer[n] = 0;
-//
-		//}
-		////Get ADC voltages
-		//
-		////Set Battery Voltage measurement sink
-		////port_pin_set_output_level(PIN_PB03, false);  //v0,5 will be PB03
-		//port_pin_set_output_level(PIN_PA15, false);  
-		////Set VSen on
-		//port_pin_set_output_level(PIN_PA27, true);  
-		//
-		////Does there need to be a delay here to allow VSEN to settle and sensors to turn on?
-		//
-		////adc_start_conversion(&adc_instance); //Not needed as it happens in adc_read_buffer_job()
-		//adc_read_buffer_job(&adc_instance, adc_buffer, ADC_SAMPLES);
-		////Make sure the job is finished.
-		//while(adc_get_job_status(&adc_instance, ADC_JOB_READ_BUFFER ) == STATUS_BUSY){
-		//}
-		//
-		////Remove Battery Voltage measurement sink
-		////port_pin_set_output_level(PIN_PB03, true);//v0,5 will be PB03
-		//port_pin_set_output_level(PIN_PA15, true); 
-		////Set VSen off
-		//port_pin_set_output_level(PIN_PA27, false);  
-	//
-		////Setup data for LoRaWAN transmission
-		////Conversion from 16bit ADC to float done in payload decoder, or Node-Red.		
-		//temp_lower_byte = adc_buffer[0] & 0xFF;
-		//temp_upper_byte = (adc_buffer[0] & 0xFF00)>>8;
-		//
-		//vBatt_lower_byte = adc_buffer[1] & 0xFF;
-		//vBatt_upper_byte = (adc_buffer[1] & 0xFF00)>>8;
-		//
-		////This input isn't working correctly yet.  Needs to be working for battery measurement.
-		//PA08_lower_byte = adc_buffer[2] & 0xFF;
-		//PA08_upper_byte = (adc_buffer[2] & 0xFF00)>>8;
-		//
-		//////snprintf(temp_sen_str,sizeof(temp_sen_str),"%c%c%c%c\n", temp_lower_byte, temp_upper_byte, vBatt_lower_byte, vBatt_upper_byte);
-		//printf("\rn%c%c,%c%c,%c%c\rn", temp_lower_byte, temp_upper_byte, vBatt_lower_byte, vBatt_upper_byte, PA08_lower_byte, PA08_upper_byte);
-//
-	//}
+
 	
 	
 	
@@ -450,6 +440,183 @@ static void config_board(void)
 	//port_pin_set_output_level(PIN_PB03, true);
 	
 }
+
+static void setup_I2C(void){
+	//C:\Users\Tim\Dropbox\Uni2021\LoRaWAN\Design Files\src\APPS_ENDDEVICE_SN346\APPS_ENDDEVICE_SN346\src\ASF\sam0\boards\wlr089_xplained_pro\wlr089_xplained_pro.h
+	struct port_config pin_conf;
+	enum status_code status;
+	//int timeout = 0;
+	//Vsen enable Pin
+	port_get_config_defaults(&pin_conf);
+	pin_conf.direction  = PORT_PIN_DIR_OUTPUT;
+	port_pin_set_config(PIN_PA27, &pin_conf);
+	port_pin_set_output_level(PIN_PA27, true);
+
+	/* Initialize config structure and software module. */
+	struct i2c_master_config config_i2c_master;
+	i2c_master_get_config_defaults(&config_i2c_master);
+	/* Change buffer timeout to something longer. */
+	config_i2c_master.buffer_timeout = 10000;
+	config_i2c_master.pinmux_pad0    = EXT1_I2C_SERCOM_PINMUX_PAD0;
+	config_i2c_master.pinmux_pad1    = EXT1_I2C_SERCOM_PINMUX_PAD1;
+
+	/* Initialize and enable device with config. */
+	status = i2c_master_init(&SHTC_master_instance, EXT1_I2C_MODULE, &config_i2c_master);
+	i2c_master_enable(&SHTC_master_instance);
+
+}
+
+void i2c_write_complete_callback(struct i2c_master_module *const module){
+    /* Initiate new packet read */
+    i2c_master_read_packet_job(&SHTC_master_instance,&SHTC_read_packet);
+}
+
+void configure_i2c_callbacks(void){
+    /* Register callback function. */
+    i2c_master_register_callback(&SHTC_master_instance, i2c_write_complete_callback, I2C_MASTER_CALLBACK_WRITE_COMPLETE);
+    i2c_master_enable_callback(&SHTC_master_instance, I2C_MASTER_CALLBACK_WRITE_COMPLETE);
+}
+
+
+static void	read_SHTC3(void){
+	//STHC3 address: 0x70
+	//Sleep: 0xB098
+	//Wakeup: 0x3517
+
+	//Dev Board Colours
+	//Yellow - SDA PA16
+	//Green - SCL PA17
+
+	//Timeout counter.
+	uint16_t timeout = 0;
+
+	port_pin_set_output_level(PIN_PA18, true); //yellow LED on
+	//Set device into sleep mode
+	SHTC_write_buffer[0] = 0xB0;
+	SHTC_write_buffer[1] = 0x98;
+	SHTC_write_packet.data_length = 2;
+	//send
+	while (i2c_master_write_packet_wait(&SHTC_master_instance, &SHTC_write_packet) != STATUS_OK) {
+		/* Increment timeout counter and check if timed out. */
+		if (timeout++ == SHTC_TIMEOUT) {
+			printf("\r\nWrite Sleep Timeout\r\n");
+			break;
+		}
+	}
+
+	//Wakeup device
+		//0
+		//S
+		//1 ACK
+		//0x70 for I2C address
+		//2 ACK
+		//0x35 for Wakeup MSB
+		//3 ACK
+		//0x17 for Wakeup LSB
+		//4 ACK
+		//P
+	timeout = 0;
+	SHTC_write_buffer[0] = 0x35;
+	SHTC_write_buffer[1] = 0x17;
+
+	//send
+	while (i2c_master_write_packet_wait(&SHTC_master_instance, &SHTC_write_packet) != STATUS_OK) {
+		/* Increment timeout counter and check if timed out. */
+		if (timeout++ == SHTC_TIMEOUT) {
+			printf("\r\nWrite Wakeup Timeout\r\n");
+			break;
+		}
+	}
+
+
+	//Measurement command
+	//0
+	//S
+	//1 ACK
+	//0x70 for I2C address
+	//2 ACK
+	//0x5C for Measurement Command MSB
+	//3 ACK
+	//0x24 for Measurement Command LSB
+	//4 ACK
+	//P
+	timeout = 0;
+
+	//temperature first, clock stretching disabled, Normal mode
+	SHTC_write_buffer[0] = 0x78;
+	SHTC_write_buffer[1] = 0x66;
+	//relative humidity first, clock stretching disabled, Normal mode
+	//SHTC_write_buffer[0] = 0x58;
+	//SHTC_write_buffer[1] = 0xE0;
+	//send
+	while (i2c_master_write_packet_wait(&SHTC_master_instance, &SHTC_write_packet) != STATUS_OK) {
+		/* Increment timeout counter and check if timed out. */
+		if (timeout++ == SHTC_TIMEOUT) {
+			printf("\r\nWrite Measurement Timeout\r\n");
+			break;
+		}
+	}
+
+	port_pin_set_output_level(PIN_PA18, false);  //Yellow LED off
+	port_pin_set_output_level(PIN_PA19, true);	//Green LED on
+
+
+
+	//Read data command
+	timeout = 0;
+	SHTC_read_packet.data = SHTC_read_buffer;
+	SHTC_read_packet.data_length = SHTC_DATA_LENGTH;
+	//read
+	while (i2c_master_read_packet_wait(&SHTC_master_instance, &SHTC_read_packet) != STATUS_OK) {
+		/* Increment timeout counter and check if timed out. */
+		if (timeout++ == SHTC_TIMEOUT) {
+			printf("\r\nRead Timeout\r\n");
+			break;
+		}
+	}
+	//temp first
+	uint16_t temperature_reading, humidity_reading;
+	//printf("%d\rn",(uint16_t)SHTC_read_buffer[0]<<(1*8));
+	uint16_t temp_msb, temp_lsb, humid_msb, humid_lsb;
+	temp_msb = SHTC_read_buffer[0];
+	temp_lsb = SHTC_read_buffer[1];
+	humid_msb = SHTC_read_buffer[3];
+	humid_lsb = SHTC_read_buffer[4];
+	
+	temp_msb = temp_msb<<8;
+	humid_msb = humid_msb<<8;
+	temperature_reading = temp_lsb + temp_msb;
+	humidity_reading = humid_lsb + humid_msb;
+	
+	//temperature_reading = (uint16_t)SHTC_read_buffer[0]<<8 + (uint16_t)SHTC_read_buffer[1];
+	//humidity_reading = (uint16_t)SHTC_read_buffer[3]<<(1*8) + (uint16_t)SHTC_read_buffer[4];
+
+	double temperature, relative_humidity;
+	
+	temperature = -45+175*((double)temperature_reading/65536);
+	relative_humidity = 100*((double)humidity_reading/65536);
+	
+	printf("The temperature is %g degrees Celsius.\r\n", temperature);
+	printf("The relative humidity is %g Percent.\r\n", relative_humidity);
+	//Set device into sleep mode
+	timeout = 0;
+	//Set device into sleep mode
+	SHTC_write_buffer[0] = 0xB0;
+	SHTC_write_buffer[1] = 0x98;
+	SHTC_write_packet.data_length = 2;
+	//send
+	while (i2c_master_write_packet_wait(&SHTC_master_instance, &SHTC_write_packet) != STATUS_OK) {
+		/* Increment timeout counter and check if timed out. */
+		if (timeout++ == SHTC_TIMEOUT) {
+			printf("\r\nWrite Sleep Timeout\r\n");
+			break;
+		}
+	}
+
+	port_pin_set_output_level(PIN_PA18, false); //Green LED off
+}
+
+
 
 
 #ifdef CONF_PMM_ENABLE
